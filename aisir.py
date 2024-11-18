@@ -1,32 +1,38 @@
+
+# aisir.py
+# Ebpf based local firewall tool by Assaf R.
+# --- --- ---
+
+# Imports
 from bcc import BPF
 import socket, struct, ctypes
 
+# Constants
 EBPF_PROGRAM = "aisir_bpf.c"
 IP_BLACKLIST = "ip_list.txt"
+BUFFER_SIZE = 128 * 1024  # 128KB
 
+# Load C program
 with open (EBPF_PROGRAM, 'r') as raw_program:
         program = raw_program.read()
 b = BPF(text=program, cflags=["-Wno-macro-redefined"])
 
-def junk(cpu):
-    '''
-    Sometimes when events aren't processed properly by the ebpf program or the buffer for the program isn't large enough
-    event will be lost, instead of printing error message every time I rather disregard them.
-    '''
-    pass
-
 def load_blacklist():
-    with open(IP_BLACKLIST, 'r') as ip_list_file:
-        ip_list = ip_list_file.readlines()
-        for i in range(len(ip_list)):
-            print(ip_list[i])
-            # b['ip_blacklist'][ctypes.c_int(i)] = ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip_list[i]))[0])
-            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip_list[i]))[0])] = ctypes.c_int(1) 
-def dict_events(data):
     '''
-    In order to compare easily every event with every rule I want to have them both in the same format and because of
-    the variety of the data I chose to use dict as my data format
+    Fill the hash table with our blacklisted IPs
     '''
+    with open(IP_BLACKLIST, 'r') as ip_blacklist_file:
+        ip_list = ip_blacklist_file.readlines()
+        for ip in ip_list:
+            print(f"Blacklist IP loaded - {ip}")
+            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(1) # The 1 is for the c part
+   
+
+def process_data(cpu, data, size):
+    '''
+    converts data to dictionary and print it
+    '''
+    data = b["output"].event(data)
     event = {
         "syscall": data.syscall_name.decode(),
         "pid": data.pid,
@@ -35,23 +41,13 @@ def dict_events(data):
         "process_name": data.process_name.decode(),
         "parent_process_name": data.parent_process_name.decode(),
         "target_ip":socket.inet_ntoa(struct.pack('I', data.target_ip)),
-        "raw_ip":data.target_ip,
         "res":data.res
     }
     
     print(event)
-   
-
-def process_data(cpu, data, size):
-    '''
-    This function "connects" to the ebpf side and sends the data down the pipeline
-    '''
-    data = b["output"].event(data)
-    dict_events(data)
 
 def main():
     print("starting")
-
 
     s_connect = b.get_syscall_fnname("connect")
 
@@ -59,15 +55,10 @@ def main():
 
     load_blacklist()
 
-    buffer_size = 128 * 1024  # 128KB
-
-    # This line "connects" the process_data function with checking the output buffer
-    b["output"].open_perf_buffer(process_data, page_cnt=buffer_size // 4096, lost_cb=junk) 
-
-    # I would like to always check the output
+    b["output"].open_perf_buffer(process_data, page_cnt=BUFFER_SIZE // 4096) 
+    
     while True:  
         try: 
-            b.trace_print()
             b.perf_buffer_poll()
         except KeyboardInterrupt:
             exit()
