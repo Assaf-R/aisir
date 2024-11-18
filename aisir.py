@@ -1,5 +1,5 @@
 from bcc import BPF
-import socket, struct
+import socket, struct, ctypes
 
 EBPF_PROGRAM = "aisir_bpf.c"
 IP_BLACKLIST = "ip_list.txt"
@@ -17,11 +17,11 @@ def junk(cpu):
 
 def load_blacklist():
     with open(IP_BLACKLIST, 'r') as ip_list_file:
-        ip_list = ip_list_file.read()
+        ip_list = ip_list_file.readlines()
         for i in range(len(ip_list)):
             print(ip_list[i])
-            b['ip_blacklist'][i] = struct.unpack('I', socket.inet_aton(ip_list[i]))[0]
-
+            # b['ip_blacklist'][ctypes.c_int(i)] = ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip_list[i]))[0])
+            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip_list[i]))[0])] = ctypes.c_int(1) 
 def dict_events(data):
     '''
     In order to compare easily every event with every rule I want to have them both in the same format and because of
@@ -35,7 +35,8 @@ def dict_events(data):
         "process_name": data.process_name.decode(),
         "parent_process_name": data.parent_process_name.decode(),
         "target_ip":socket.inet_ntoa(struct.pack('I', data.target_ip)),
-        "raw_ip":data.target_ip
+        "raw_ip":data.target_ip,
+        "res":data.res
     }
     
     print(event)

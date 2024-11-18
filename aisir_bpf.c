@@ -13,12 +13,24 @@ struct triggered_event {
     char process_name[TASK_COMM_LEN];
     char parent_process_name[TASK_COMM_LEN];
     u32 target_ip;
+    int res;
 };
 
-BPF_ARRAY(ip_blacklist, u32, 256);
+// BPF_ARRAY(ip_blacklist, u32, 256);
+BPF_HASH(ip_blacklist, u32, u8);
 
 // This will make a perf buffer that will let me pass data back to the user mode handler
 BPF_PERF_OUTPUT(output); 
+
+
+static int check_against_blacklist(u32 cur_ip) 
+{
+    u8 *found = ip_blacklist.lookup(&cur_ip);
+    bpf_trace_printk("good - %d - %d", cur_ip, found);
+
+    return found ? 1 : 0; // 1 if found, 0 otherwise
+}
+
 
 static void enrich_data(void *ctx, struct triggered_event event)
 {
@@ -50,25 +62,19 @@ static void enrich_data(void *ctx, struct triggered_event event)
     bpf_get_current_comm(&event.process_name, TASK_COMM_LEN);
 
     u32 cur_ip = event.target_ip;
-    u32 *against_ip;
-
-    #pragma unroll
-    for (int i=0; i<16; i++)
+    int res = check_against_blacklist(cur_ip);
+    if(res)
     {
-        against_ip = ip_blacklist.lookup(&i);
-        if (against_ip)
-        {
-            if (cur_ip == *against_ip) 
-            {
-                bpf_trace_printk("good ---- %d", cur_ip);
-                bpf_override_return(ctx, -EACCES);
-            }
-            else
-            {
-                bpf_trace_printk("%d", cur_ip);
-            }
-        }
+        bpf_probe_read_kernel(&event.res, (sizeof(res)), &res);
+        bpf_override_return(ctx, -EACCES);
+        // bpf_trace_printk("good - %d", cur_ip);
     }
+    else
+    {
+        bpf_probe_read_kernel(&event.res, (sizeof(res)), &res);
+        // bpf_trace_printk("fuck - %d", cur_ip);
+    }
+
     output.perf_submit(ctx, &event, sizeof(event)); 
 }
 
