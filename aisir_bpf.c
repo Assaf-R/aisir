@@ -50,16 +50,25 @@ static void enrich_data(void *ctx, struct triggered_event event)
     bpf_get_current_comm(&event.process_name, TASK_COMM_LEN);
 
     u32 cur_ip = event.target_ip;
-    if (cur_ip == 134744072) 
-    {
-        bpf_trace_printk("good ---- %d", cur_ip);
-        bpf_override_return(ctx, -EACCES);
-    }
-    else
-    {
-        bpf_trace_printk("%d", cur_ip);
-    }
+    u32 *against_ip;
 
+    #pragma unroll
+    for (int i=0; i<16; i++)
+    {
+        against_ip = ip_blacklist.lookup(&i);
+        if (against_ip)
+        {
+            if (cur_ip == *against_ip) 
+            {
+                bpf_trace_printk("good ---- %d", cur_ip);
+                bpf_override_return(ctx, -EACCES);
+            }
+            else
+            {
+                bpf_trace_printk("%d", cur_ip);
+            }
+        }
+    }
     output.perf_submit(ctx, &event, sizeof(event)); 
 }
 

@@ -1,7 +1,7 @@
 from bcc import BPF
 import socket, struct
 
-EBPF_PROGRAM = "eisir_bpf.c"
+EBPF_PROGRAM = "aisir_bpf.c"
 IP_BLACKLIST = "ip_list.txt"
 
 with open (EBPF_PROGRAM, 'r') as raw_program:
@@ -18,7 +18,9 @@ def junk(cpu):
 def load_blacklist():
     with open(IP_BLACKLIST, 'r') as ip_list_file:
         ip_list = ip_list_file.read()
-        b['ip_blacklist'][0] = 3
+        for i in range(len(ip_list)):
+            print(ip_list[i])
+            b['ip_blacklist'][i] = struct.unpack('I', socket.inet_aton(ip_list[i]))[0]
 
 def dict_events(data):
     '''
@@ -52,8 +54,9 @@ def main():
 
     s_connect = b.get_syscall_fnname("connect")
 
-    # Networking syscalls
     b.attach_kprobe(event=s_connect, fn_name="syscall__connect")
+
+    load_blacklist()
 
     buffer_size = 128 * 1024  # 128KB
 
