@@ -20,6 +20,8 @@ BPF_PERF_OUTPUT(output);
 static int check_against_blacklist(u32 cur_ip) 
 {
     u8 *found = ip_blacklist.lookup(&cur_ip);
+    bpf_trace_printk("number: %d, %d", found, &found);
+
     return found ? 1 : 0; // 1 if found, 0 otherwise
 }
 

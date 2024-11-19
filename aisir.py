@@ -5,7 +5,7 @@
 
 # Imports
 from bcc import BPF
-import socket, struct, ctypes, os, time
+import socket, struct, ctypes, os, time, datetime
 
 # Constants
 EBPF_PROGRAM = "aisir_bpf.c"
@@ -16,10 +16,12 @@ LOG_NAME = "aisir"
 LOG_EXTENT = ".log"
 LOG_MAX_SIZE = 8192
 
-# Load C program
+# Globals
 with open (EBPF_PROGRAM, 'r') as raw_program:
         program = raw_program.read()
 b = BPF(text=program, cflags=["-Wno-macro-redefined"])
+
+boot_time = time.mktime(datetime.datetime.strptime(os.popen('uptime -s').read().strip(),"%Y-%m-%d %H:%M:%S").timetuple()) # The ebpf gives time since boot so I need this
 
 def load_blacklist():
     '''
@@ -30,7 +32,13 @@ def load_blacklist():
         for ip in ip_list:
             print(f"Blacklist IP loaded - {ip}")
             b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(1) # The 1 is for the c part
-   
+
+def what_time_is_it_right_now(ns_time):
+    '''
+    Adds time since boot to boot time
+    '''
+    global boot_time
+    return(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(boot_time+(ns_time/1e9))))
 
 def logging(event):
     '''
@@ -53,6 +61,10 @@ def logging(event):
                 last_log = True
         else:
             last_log = True
+
+
+    print(event)
+
     with open(f"{LOG_FOLDER}/{LOG_NAME}{log_number}{LOG_EXTENT}", 'a') as log_file:
         log_file.write(f"{event}\n") 
 
@@ -62,7 +74,7 @@ def format_events(event):
     for key in event:
         msg += f"{key} - {event[key]}, "
 
-    print(msg)
+    return(msg)
 
 def process_data(cpu, data, size):
     '''
@@ -70,6 +82,7 @@ def process_data(cpu, data, size):
     '''
     data = b["output"].event(data)
     event = {
+        "event_time": what_time_is_it_right_now(data.event_time),
         "syscall": data.syscall_name.decode(),
         "pid": data.pid,
         "ppid": data.ppid,
@@ -96,6 +109,7 @@ def main():
     while True:  
         try: 
             b.perf_buffer_poll()
+            b.trace_print()
         except KeyboardInterrupt:
             exit()
 
