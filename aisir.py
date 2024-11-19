@@ -9,7 +9,7 @@ import socket, struct, ctypes, os, time, datetime, argparse
 
 # Constants
 EBPF_PROGRAM = "aisir_bpf.c"
-IP_BLACKLIST = "ip_list.txt"
+IP_LIST = "ip_list.txt"
 BUFFER_SIZE = 128 * 1024  # 128KB
 LOG_FOLDER = "/var/log/loch"
 LOG_NAME = "aisir"
@@ -23,15 +23,23 @@ b = BPF(text=program, cflags=["-Wno-macro-redefined"])
 
 boot_time = time.mktime(datetime.datetime.strptime(os.popen('uptime -s').read().strip(),"%Y-%m-%d %H:%M:%S").timetuple()) # The ebpf gives time since boot so I need this
 
-def load_blacklist(filter_type):
+def load_ip_list(filter_type):
     '''
     Fill the hash table with our blacklisted IPs
     '''
-    with open(IP_BLACKLIST, 'r') as ip_blacklist_file:
-        ip_list = ip_blacklist_file.readlines()
+
+    b['filter_type'][0] = ctypes.c_int(filter_type) # 1 - Block : 0 - Pass
+
+    if filter_type == 1:
+        list_type = "Black"
+    else:
+        list_type = "White"
+
+    with open(IP_LIST, 'r') as ip_list_file:
+        ip_list = ip_list_file.readlines()
         for ip in ip_list:
-            print(f"Blacklist IP loaded - {ip}")
-            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(filter_type) # 1 - Block : 0 - Pass
+            print(f"{list_type}list IP loaded - {ip}")
+            b['ip_list'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(1) 
 
 def what_time_is_it_right_now(ns_time):
     '''
@@ -97,7 +105,6 @@ def process_data(cpu, data, size):
 
 def main():
 
-
     parser = argparse.ArgumentParser(prog='aisir', description="ebpf based local firewall filter", epilog="choose either whitelist or blacklist")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -108,12 +115,11 @@ def main():
 
     if args.blacklist:
         print("aisir IP blacklist initialized")
-        load_blacklist(1)
+        load_ip_list(1)
     elif args.whitelist:
         print("aisir IP whitelist initialized")
-        load_blacklist(0)
+        load_ip_list(0)
     args = parser.parse_args()
-
 
     s_connect = b.get_syscall_fnname("connect")
 
@@ -125,7 +131,6 @@ def main():
     while True:  
         try: 
             b.perf_buffer_poll()
-            b.trace_print()
         except KeyboardInterrupt:
             exit()
 

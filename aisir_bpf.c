@@ -13,23 +13,48 @@ struct triggered_event {
     int blocked;
 };
 
-BPF_HASH(ip_blacklist, u32, u8);
+BPF_HASH(ip_list, u32, u8);
+
+BPF_ARRAY(filter_type, int, 1);
 
 BPF_PERF_OUTPUT(output); 
 
-static int check_against_blacklist(u32 cur_ip) 
+static int check_against_list(u32 cur_ip) 
 {
 
-    // u8 *found = ip_blacklist.lookup(&cur_ip);
-    // bpf_trace_printk("number: %d, %d", found, &found);
-
+    int key = 0;                 // First element key
+    int *value;
+    value = filter_type.lookup(&key);
+    
     u8 *found;
-    found = ip_blacklist.lookup(&cur_ip);
-    if(found)
+    found = ip_list.lookup(&cur_ip);
+
+    if(value)
     {
-        bpf_trace_printk("number: %d, %d", found, *found);
+        if(*value == 1)
+        {
+            if(found)
+            {
+                return(1);
+            }
+            else
+            {
+                return(0);
+            }
+        }
+        else if(*value == 0)
+        {
+            if(found)
+            {
+                return(0);
+            }
+            else
+            {
+                return(1);
+            }
+        }
     }
-    return found ? 1 : 0; // 1 if found, 0 otherwise
+    return(1); // Shouldn't happen
 }
 
 
@@ -60,7 +85,7 @@ static void enrich_data(void *ctx, struct triggered_event event)
     bpf_get_current_comm(&event.process_name, TASK_COMM_LEN);
 
     u32 cur_ip = event.target_ip;
-    int res = check_against_blacklist(cur_ip);
+    int res = check_against_list(cur_ip);
     if(res) // If the ip is in the blacklist the result will be 1, else 0
     {
         bpf_probe_read_kernel(&event.blocked, (sizeof(res)), &res);
