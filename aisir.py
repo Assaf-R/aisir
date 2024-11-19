@@ -5,7 +5,7 @@
 
 # Imports
 from bcc import BPF
-import socket, struct, ctypes, os, time, datetime
+import socket, struct, ctypes, os, time, datetime, argparse
 
 # Constants
 EBPF_PROGRAM = "aisir_bpf.c"
@@ -23,7 +23,7 @@ b = BPF(text=program, cflags=["-Wno-macro-redefined"])
 
 boot_time = time.mktime(datetime.datetime.strptime(os.popen('uptime -s').read().strip(),"%Y-%m-%d %H:%M:%S").timetuple()) # The ebpf gives time since boot so I need this
 
-def load_blacklist():
+def load_blacklist(filter_type):
     '''
     Fill the hash table with our blacklisted IPs
     '''
@@ -31,7 +31,7 @@ def load_blacklist():
         ip_list = ip_blacklist_file.readlines()
         for ip in ip_list:
             print(f"Blacklist IP loaded - {ip}")
-            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(1) # The 1 is for the c part
+            b['ip_blacklist'][ctypes.c_uint(struct.unpack('I', socket.inet_aton(ip))[0])] = ctypes.c_int(filter_type) # 1 - Block : 0 - Pass
 
 def what_time_is_it_right_now(ns_time):
     '''
@@ -96,13 +96,29 @@ def process_data(cpu, data, size):
     logging(format_events(event))
 
 def main():
-    print("starting")
+
+
+    parser = argparse.ArgumentParser(prog='aisir', description="ebpf based local firewall filter", epilog="choose either whitelist or blacklist")
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-b', '--blacklist', action='store_true', help="Deny connection to IP addresses that are in the list")
+    group.add_argument('-w', '--whitelist', action='store_true', help="Deny connection to IP addresses that aren't in the list")
+
+    args = parser.parse_args()
+
+    if args.blacklist:
+        print("aisir IP blacklist initialized")
+        load_blacklist(1)
+    elif args.whitelist:
+        print("aisir IP whitelist initialized")
+        load_blacklist(0)
+    args = parser.parse_args()
+
 
     s_connect = b.get_syscall_fnname("connect")
 
     b.attach_kprobe(event=s_connect, fn_name="syscall__connect")
 
-    load_blacklist()
 
     b["output"].open_perf_buffer(process_data, page_cnt=BUFFER_SIZE // 4096) 
     
