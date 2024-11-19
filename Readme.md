@@ -7,7 +7,7 @@ The eBpf program checks if a connection to the remote IP is allowed. in the ip_l
 The results are logged to /var/log/loch/aisirX.log
 
 ### How to run
-***RUN AS ROOT***
+***RUN AS ROOT*** \
 You need to run the program with either the -w or -b flags, so your firewall wil work based on a whitelist or blacklist.
 If you chose whitelist only connections to addresses in the list will be allowed, and if you chose blacklist they will be dropped
 
