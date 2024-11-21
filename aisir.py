@@ -1,4 +1,3 @@
-
 # aisir.py
 # eBpf based local firewall tool by Assaf R.
 # --- --- ---
@@ -70,8 +69,8 @@ def logging(event):
         else:
             last_log = True
 
-
-    print(event)
+    # If you want to debug uncomment next line 
+    # print(event)
 
     with open(f"{LOG_FOLDER}/{LOG_NAME}{log_number}{LOG_EXTENT}", 'a') as log_file:
         log_file.write(f"{event}\n") 
