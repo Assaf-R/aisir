@@ -16,9 +16,11 @@ LOG_EXTENT = ".log"
 LOG_MAX_SIZE = 8192
 
 # Globals
-with open (EBPF_PROGRAM, 'r') as raw_program:
-        program = raw_program.read()
-b = BPF(text=program, cflags=["-Wno-macro-redefined"])
+def load_bpf_prog():
+    with open (EBPF_PROGRAM, 'r') as raw_program:
+            program = raw_program.read()
+    global b
+    b = BPF(text=program, cflags=["-Wno-macro-redefined"])
 
 boot_time = time.mktime(datetime.datetime.strptime(os.popen('uptime -s').read().strip(),"%Y-%m-%d %H:%M:%S").timetuple()) # The ebpf gives time since boot so I need this
 
@@ -70,7 +72,7 @@ def logging(event):
             last_log = True
 
     # If you want to debug uncomment next line 
-    # print(event)
+    print(event)
 
     with open(f"{LOG_FOLDER}/{LOG_NAME}{log_number}{LOG_EXTENT}", 'a') as log_file:
         log_file.write(f"{event}\n") 
@@ -111,6 +113,7 @@ def main():
     group.add_argument('-w', '--whitelist', action='store_true', help="Deny connection to IP addresses that aren't in the list")
 
     args = parser.parse_args()
+    load_bpf_prog()
 
     if args.blacklist:
         print("aisir IP blacklist initialized")
@@ -119,7 +122,7 @@ def main():
         print("aisir IP whitelist initialized")
         load_ip_list(0)
     args = parser.parse_args()
-
+    
     s_connect = b.get_syscall_fnname("connect")
 
     b.attach_kprobe(event=s_connect, fn_name="syscall__connect")
